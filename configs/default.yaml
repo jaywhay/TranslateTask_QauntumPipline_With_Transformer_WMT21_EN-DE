@@ -1,0 +1,45 @@
+data:
+  raw_path: /content/drive/MyDrive/Colab Notebooks/NLP/data/WMT21.csv
+  cache_path: /content/drive/MyDrive/Colab 
+    Notebooks/NLP/cache/wmt21_parsed_lite.pkl
+training:
+  seed: 42
+  epochs: 10
+  batch_size: 16
+  max_length: 64
+  val_size: 0.2
+  tokenizer: Helsinki-NLP/opus-mt-en-de
+  mixed_precision: true
+  grad_accum_steps: 1
+  clip_grad_norm: 1.0
+
+  decode_preview_every: 0
+  decode_max_len: 50
+
+  bleu_every: 1
+  bleu_samples_batches: 4
+model:
+  embed_dim: 64
+  head_dim: 32
+  num_heads: 4
+  num_quantum_heads: 1
+  qubits: 6
+  layers: 3
+  tf_heads: 4
+  qcnn_pool: attn
+  qcnn_chunk: 8
+optimizer:
+  lr: 1e-4
+  weight_decay: 0.0
+scheduler:
+  type: CosineAnnealingLR
+  T_max: 10
+preprocess:
+  en_model: en_core_web_trf
+  de_model: de_dep_news_trf
+  block_size: 50000
+  batch_size: 16
+quantum:
+  backend: lightning.gpu
+  diff_method: adjoint
+  shots:
