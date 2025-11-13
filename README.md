@@ -21,6 +21,7 @@ pip install -r requirements.txt
 
 # Run training
 Be sure to run preparedata.py before running the code.
+
 pyhthon preparedata.py
 python train.py --config configs/train_config.yaml
 
