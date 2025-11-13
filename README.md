@@ -25,9 +25,3 @@ Be sure to run preparedata.py before running the code.
 pyhthon preparedata.py
 python train.py --config configs/train_config.yaml
 
-@article{yourpaper2025,
-  title={An Efficient Hybrid Quantum–classical NLP Architecture based on Structure Modular Design for Optimization},
-  author={Jaeyun Jeong, James Park},
-  journal={IEEE Transactions on Neural Networks and Learning Systems},
-  year={2025}
-}
