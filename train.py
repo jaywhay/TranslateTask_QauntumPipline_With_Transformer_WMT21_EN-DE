@@ -9,6 +9,10 @@ from torch.optim.lr_scheduler import CosineAnnealingLR
 from transformers import AutoTokenizer
 from ruamel.yaml import YAML
 from tqdm import tqdm
+from evaluate_ext import extended_metrics
+import matplotlib.pyplot as plt
+import json
+
 
 from Data import get_train_val_loaders
 from main_model import QuantumFusionModel
@@ -260,6 +264,47 @@ def eval_bleu_subset(
         return 0.0
     return compute_bleu(refs, hyps)
 
+def plot_training_curves(log_history, save_dir="results"):
+    """
+    log_history: list of dicts [
+        {"epoch": 1, "train_loss": 1.23, "val_loss": 1.10, 
+        "gpu_util": 0.78, "energy_per_token": 0.92},
+        ...
+    ]
+    """
+    os.makedirs(save_dir, exist_ok=True)
+    epochs = [d["epoch"] for d in log_history]
+    train_loss = [d["train_loss"] for d in log_history]
+    val_loss = [d["val_loss"] for d in log_history]
+    gpu_util = [d["gpu_util"] * 100 for d in log_history]
+    energy_tok = [d["energy_per_token"] for d in log_history]
+
+    plt.figure(figsize=(6,4))
+    plt.plot(epochs, train_loss, color="black", linewidth=2.2, label="Training Loss")
+    plt.plot(epochs, val_loss, color="gray", linestyle="--", linewidth=2.2, label="Validation Loss")
+    plt.xlabel("Epoch", fontsize=11)
+    plt.ylabel("Loss", fontsize=11)
+    plt.title("Training and Validation Loss", fontsize=12)
+    plt.legend(fontsize=10, frameon=False)
+    plt.grid(False)
+    plt.tight_layout()
+    plt.savefig(os.path.join(save_dir, "fig_loss_curve.png"), dpi=400, transparent=True)
+    plt.close()
+
+    plt.figure(figsize=(6,4))
+    plt.plot(epochs, gpu_util, color="black", linewidth=2.2, label="GPU Utilization (%)")
+    plt.plot(epochs, energy_tok, color="gray", linestyle="--", linewidth=2.2, label="Energy per Token (J/token)")
+    plt.xlabel("Epoch", fontsize=11)
+    plt.ylabel("Efficiency Metric", fontsize=11)
+    plt.title("Efficiency Trend across Epochs", fontsize=12)
+    plt.legend(fontsize=10, frameon=False)
+    plt.grid(False)
+    plt.tight_layout()
+    plt.savefig(os.path.join(save_dir, "fig_efficiency_trend.png"), dpi=400, transparent=True)
+    plt.close()
+    print(f"[✓] Saved curves to {save_dir}/")
+
+
 # ------------ main ------------
 def main():
     # 1) Config / seed / device
@@ -321,6 +366,7 @@ def main():
     best_val = float("inf")
     best_bleu = -1.0
     os.makedirs("checkpoints", exist_ok=True)
+    log_history = []
 
     for ep in range(1, epochs + 1):
         t0 = time.time()
@@ -349,6 +395,20 @@ def main():
                 model, val_loader, tokenizer_src, tokenizer_tgt, device,
                 max_batches=bleu_samples_batches, max_len=decode_max_len
             )
+        t1 = time.time()
+        ex_metrics = extended_metrics(model, refs=None, hyps=None,
+                                    gpu_power_watts=200.0,
+                                    t_start=t0, t_end=t1, n_tokens=bleu_samples_batches*16*64)
+        print("[EXT_METRICS]", ex_metrics)
+        
+        log_entry = {
+            "epoch": ep,
+            "train_loss": train_loss,
+            "val_loss": val_loss,
+            "gpu_util": ex_metrics.get("gpu_utilization", 0.0),
+            "energy_per_token": ex_metrics.get("energy_per_token", 0.0),
+        }
+        log_history.append(log_entry)
 
         dt = time.time() - t0
         steps = len(train_loader)
@@ -358,7 +418,7 @@ def main():
             print(f"Epoch {ep}: train={train_loss:.4f} val={val_loss:.4f} | epoch_time={dt:.1f}s | sec/batch={spb:.2f} | samples/s={sps:.1f}")
         else:
             print(f"Epoch {ep}: train={train_loss:.4f} val={val_loss:.4f} BLEU={bleu:.2f} "
-                  f"| epoch_time={dt:.1f}s | sec/batch={spb:.2f} | samples/s={sps:.1f}")
+                f"| epoch_time={dt:.1f}s | sec/batch={spb:.2f} | samples/s={sps:.1f}")
 
         # 체크포인트 정책: val loss 기준 + BLEU 기준
         improved = False
@@ -375,7 +435,12 @@ def main():
         if not improved:
             # 필요하면 조기종료 로직을 여기 추가할 수 있음(patience 등)
             pass
-
+    
+    with open("results/training_log.json", "w") as f:
+        json.dump(log_history, f, indent=2)
+    plot_training_curves(log_history)
+    print("Plots generated under results/ directory")
+    
     torch.save(model.state_dict(), "checkpoints/final_model.pt")
     print("Training complete. Final model saved to checkpoints/final_model.pt")
 
